@@ -7,7 +7,8 @@ Note: This is not a production ready code. There is one small bug in the code wh
 1. Create a empty folder 
 2. Initialize the folder using `git init` command
 3. Copy the link : https://github.com/HilalPodile/Task-Management-API.git
-4. Clone the repo using the command: `git clone <link of repo>`
+4. Clone the repo using the below commands: 
+    4.1 git clone <repo_link>
 5. After successful cloning of repo, open the folder and run the command in terminal : npm init(The npm init command install the node_modules in the folder)
 6. Install the required packages to run the code using the command: npm i express apollo-server graphql bcrypt dotenv 
 7. After successful installation of the packages, in the package.json file above scripts object add a key value pair "type": "module". This change is necessary as we are using module.js
