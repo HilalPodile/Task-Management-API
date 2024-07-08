@@ -4,8 +4,7 @@ import bcrypt from 'bcrypt';
 import Organizations from '../models/organization.model.js';
 import Users from '../models/user.model.js';
 import Tasks from '../models/task.model.js';
-import { generateToken, verifyToken } from '../middlewares/token.jwt.js';
-import User from '../models/user.model.js';
+import { generateToken } from '../middlewares/token.jwt.js';
 
 const resolvers = {
   Query: {
@@ -32,7 +31,25 @@ const resolvers = {
       } catch (error) {
         throw new Error(`Failed to fetch tasks: ${error.message}`);
       }
-    }
+    },
+  },
+  User: {
+    organization: async (parent) => {
+      try {
+        const organization = await Organizations.findById(parent.organizationId);
+        return organization;
+      } catch (error) {
+        throw new Error(`Failed to fetch organization for user ${parent.id}: ${error.message}`);
+      }
+    },
+    tasks: async (parent) => {
+      try {
+        const tasks = await Tasks.find({ userId: parent.id });
+        return tasks;
+      } catch (error) {
+        throw new Error(`Failed to fetch tasks for user ${parent.id}: ${error.message}`);
+      }
+    },
   },
   Mutation: {
     addOrganization: async (_, { name }) => {
@@ -49,23 +66,23 @@ const resolvers = {
       }
     },
     updateOrganization: async (_, { id, name }) => {
-        try {
-          const organizationData = await Organizations.findById(id);
-          if (!organizationData) {
-            throw new Error('Organization not found');
-          }
-      
-          if (!name) {
-            throw new Error("Name cannot be empty");
-          }
-      
-          organizationData.name = name;
-          const updatedOrganization = await organizationData.save();
-          return updatedOrganization;
-        } catch (error) {
-          throw new Error(`Failed to update organization: ${error.message}`);
+      try {
+        const organizationData = await Organizations.findById(id);
+        if (!organizationData) {
+          throw new Error('Organization not found');
         }
-    },            
+
+        if (!name) {
+          throw new Error("Name cannot be empty");
+        }
+
+        organizationData.name = name;
+        const updatedOrganization = await organizationData.save();
+        return updatedOrganization;
+      } catch (error) {
+        throw new Error(`Failed to update organization: ${error.message}`);
+      }
+    },
     delOrganization: async (_, { id }) => {
       try {
         const deletedOrganization = await Organizations.findByIdAndDelete(id);
@@ -120,65 +137,58 @@ const resolvers = {
           throw new Error("User not found");
         }
 
-        if(existingUser.role !== role){
-            if (username) existingUser.username = username;
-            if (role) existingUser.role = role;
-            if (organizationId) existingUser.organizationId = organizationId;
+        // Update fields only if they are provided and different
+        if (username) existingUser.username = username;
+        if (role && existingUser.role !== role) existingUser.role = role;
+        if (organizationId) existingUser.organizationId = organizationId;
 
-            // Hash new password if provided
-            if (password) {
-                const hashedPassword = await bcrypt.hash(password, 12);
-                existingUser.password = hashedPassword;
-            }
+        // Hash new password if provided
+        if (password) {
+          const hashedPassword = await bcrypt.hash(password, 12);
+          existingUser.password = hashedPassword;
+        }
 
         await existingUser.save();
         return existingUser;
-      }
-    }catch (error) {
-        return "You dont have permission to update the user";
+      } catch (error) {
+        throw new Error(`Failed to update user: ${error.message}`);
       }
     },
-    delUser: async(_, {id, name}) => {
-        try{
-            const existingUser = await Users.findById(id);
-
-            if(!existingUser){
-                throw new Error ("No user available");
-            }
-
-            if(existingUser.role === "User"){
-                await Users.findByIdAndDelete(id);
-                return `Organization ${deletedOrganization.name} deleted successfully`;
-            }else{
-                return "You dont have permission to delete user";
-            }
-        }catch(error){
-            throw new Error(`Failed to delete user: ${error.message}`);
+    delUser: async (_, { id }) => {
+      try {
+        const deletedUser = await Users.findByIdAndDelete(id);
+        if (!deletedUser) {
+          throw new Error('User not found');
         }
+        return `User ${deletedUser.username} deleted successfully`;
+      } catch (error) {
+        throw new Error(`Failed to delete user: ${error.message}`);
+      }
     },
     userLogin: async (_, { username, password }) => {
-        try {
-          const user = await Users.findOne({ username });
-      
-          if (!user || !(await bcrypt.compare(password, user.password))) {
-            throw new Error('Invalid credentials');
-          }
-      
-          // Generate JWT token for the user
-          const token = generateToken(user);
-      
-          return {
-            token,
-            user: {
-              username: user.username,
-              role: user.role,
-              password: user.password
-            },
-          };
-        } catch (error) {
-          throw new Error(`Failed to login: ${error.message}`);
+      try {
+        const user = await Users.findOne({ username });
+
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+          throw new Error('Invalid credentials');
         }
-    },      
+
+        // Generate JWT token for the user
+        const token = generateToken(user);
+
+        return {
+          token,
+          user: {
+            id: user._id,
+            username: user.username,
+            role: user.role,
+            organizationId: user.organizationId
+          },
+        };
+      } catch (error) {
+        throw new Error(`Failed to login: ${error.message}`);
+      }
+    },
     addTask: async (_, { title, description, status, dueDate, userId, organizationId }) => {
       try {
         if (!title || !description || !dueDate || !userId || !organizationId) {
@@ -206,59 +216,50 @@ const resolvers = {
       } catch (error) {
         throw new Error(`Failed to add task: ${error.message}`);
       }
-    }, 
-    updateTask: async (_, { id, dueDate, userId }) => {
-        try {
-            // Find the task by id and populate the userId field to get the user's role
-            const existingTask = await Tasks.findById(id).populate('userId');
-    
-            if (!existingTask) {
-                throw new Error("No task available");
-            }
-    
-            // Check if the role of the user is either Manager or Admin
-            const userRole = existingTask.userId.role;
-            if (userRole !== "Manager" && userRole !== "Admin") {
-                throw new Error("Only managers or admins can update the tasks");
-            }
-    
-            // Update the dueDate if provided
-            if (dueDate) {
-                existingTask.dueDate = dueDate;
-            }
-    
-            // Save the updated task
-            await existingTask.save();
-    
-            // Return the updated task with userId as ID
-            return {
-                ...existingTask.toObject(),
-                userId: existingTask.userId._id
-            };
-        } catch (error) {
-            throw new Error(`Failed to update task: ${error.message}`);
+    },
+    updateTask: async (_, { id, userId, dueDate }) => {
+      try {
+        const existingTask = await Tasks.findById(id);
+
+        if (!existingTask) {
+          throw new Error("Task not found");
         }
+
+        // Ensure only the owner or admins can update tasks
+        if (existingTask.userId.toString() !== userId.toString()) {
+          throw new Error("You do not have permission to update this task");
+        }
+
+        if (dueDate) {
+          existingTask.dueDate = dueDate;
+        }
+
+        await existingTask.save();
+        return existingTask;
+      } catch (error) {
+        throw new Error(`Failed to update task: ${error.message}`);
+      }
     },
     deleteTask: async (_, { id, userId }) => {
-        try {
-          const existingTask = await Tasks.findById(id).populate('userId');
-      
-          if (!existingTask) {
-            throw new Error("No task available");
-          }
-      
-          const userRole = existingTask.userId.role;
-          if (userRole !== "Manager" && userRole !== "Admin") {
-            throw new Error("Only managers and admins can delete the tasks");
-          }
-          await Tasks.findByIdAndDelete(id);
-      
-          return "Task deleted successfully";
-        } catch (error) {
-          throw new Error(`Failed to delete task: ${error.message}`);
+      try {
+        const existingTask = await Tasks.findById(id);
+
+        if (!existingTask) {
+          throw new Error("Task not found");
         }
-      },              
-  }    
+
+        // Ensure only the owner or admins can delete tasks
+        if (existingTask.userId.toString() !== userId.toString()) {
+          throw new Error("You do not have permission to delete this task");
+        }
+
+        await Tasks.findByIdAndDelete(id);
+        return `Task ${existingTask.title} deleted successfully`;
+      } catch (error) {
+        throw new Error(`Failed to delete task: ${error.message}`);
+      }
+    },
+  },
 };
 
 export default resolvers;

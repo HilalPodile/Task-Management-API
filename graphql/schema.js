@@ -11,10 +11,13 @@ const typeDefs = gql`
   }
 
   type User {
+    id: ID!
     username: String!
     password: String!
     role: String
     organizationId: ID
+    organization: Organization
+    tasks: [Task]
   }
 
   type AuthPayload {
@@ -40,23 +43,17 @@ const typeDefs = gql`
 
   type Mutation {
     addOrganization(name: String!): Organization
-
     updateOrganization(id: ID!, name: String!): Organization
-
     delOrganization(id: ID!): String
 
     addUser(username: String!, password: String!, role: String, organizationId: ID!): User
-
-    updateUser(userId: ID!, username: String!, password: String!, role: String, organizationId: ID!): User
+    updateUser(userId: ID!, username: String!, password: String, role: String, organizationId: ID): User
+    delUser(id: ID!): String
 
     userLogin(username: String!, password: String!): AuthPayload
 
-    delUser(id: ID!):String
-
     addTask(title: String!, description: String!, status: String, dueDate: Date!, userId: ID!, organizationId: ID!): Task
-
     updateTask(id: ID!, userId: ID!, dueDate: Date!): Task
-
     deleteTask(id: ID!, userId: ID!): String
   }
 `;
